@@ -3,12 +3,14 @@ import numpy as np
 # Import autograd if available
 try:
     import autograd.numpy as npa
+    from autograd.builtins import isinstance as aisinstance
     AG_AVAILABLE = True
 except ImportError:
     AG_AVAILABLE = False
 
 class NumpyBackend():
     """ Numpy Backend """
+    isinstance = staticmethod(isinstance)
     pi = staticmethod(np.pi)
     ndarray = staticmethod(np.ndarray)
 
@@ -48,6 +50,7 @@ if AG_AVAILABLE:
     from .primitives import (eig, inv)    
     class AutogradBackend():
         """ Autograd Backend """
+        isinstance = staticmethod(aisinstance)
         pi = staticmethod(npa.pi)
         ndarray = staticmethod(npa.ndarray)
         

@@ -240,6 +240,24 @@ class obj:
             T = T*self.normalization
         return R,T
 
+    def GetAmplitudes_noTranslate(self,which_layer):
+        '''
+        returns fourier amplitude
+        '''
+        if which_layer == 0 :
+            aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+            ai = self.a0
+            bi = b0
+
+        elif which_layer == self.Layer_N-1:
+            aN, b0 = SolveExterior(self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+            ai = aN
+            bi = self.bN
+
+        else:
+            ai, bi = SolveInterior(which_layer,self.a0,self.bN,self.q_list,self.phi_list,self.kp_list,self.thickness_list)
+        return ai,bi
+    
     def GetAmplitudes(self,which_layer,z_offset):
         '''
         returns fourier amplitude
@@ -265,51 +283,69 @@ class obj:
         '''
         returns field amplitude in fourier space: [ex,ey,ez], [hx,hy,hz]
         '''
-        ai, bi = self.GetAmplitudes(which_layer,z_offset)
+        ai0,bi0 = self.GetAmplitudes_noTranslate(which_layer)
+        #ai, bi = self.GetAmplitudes(which_layer,z_offset)
 
-        # hx, hy in Fourier space
-        fhxy = bd.dot(self.phi_list[which_layer],ai+bi)
-        fhx = fhxy[:self.nG]
-        fhy = fhxy[self.nG:]
-
-        # ex,ey in Fourier space
-        tmp1 = (ai-bi)/self.omega/self.q_list[which_layer]
-        tmp2 = bd.dot(self.phi_list[which_layer],tmp1)
-        fexy = bd.dot(self.kp_list[which_layer],tmp2)
-        fey = - fexy[:self.nG]
-        fex = fexy[self.nG:]
-        
-        #hz in Fourier space
-        fhz = (self.kx*fey - self.ky*fex)/self.omega
-
-        #ez in Fourier space
-        fez = (self.ky*fhx - self.kx*fhy)/self.omega
-        if self.id_list[which_layer][0] == 0:
-            fez = fez / self.Uniform_ep_list[self.id_list[which_layer][2]]
+        if bd.isinstance(z_offset,float) or bd.isinstance(z_offset,int):
+            zl = [z_offset]
         else:
-            fez = bd.dot(self.Patterned_epinv_list[self.id_list[which_layer][2]],fez)
+            zl = z_offset
 
-        return [fex,fey,fez],[fhx,fhy,fhz]
+        eh = []
+        for zoff in zl:
+            ai, bi = TranslateAmplitudes(self.q_list[which_layer],self.thickness_list[which_layer],zoff,ai0,bi0)
+            # hx, hy in Fourier space
+            fhxy = bd.dot(self.phi_list[which_layer],ai+bi)
+            fhx = fhxy[:self.nG]
+            fhy = fhxy[self.nG:]
 
-    def Solve_FieldOnGrid(self,which_layer,z_offset):
-        #assert self.id_list[which_layer][0] == 1, 'Needs to be grids layer'
+            # ex,ey in Fourier space
+            tmp1 = (ai-bi)/self.omega/self.q_list[which_layer]
+            tmp2 = bd.dot(self.phi_list[which_layer],tmp1)
+            fexy = bd.dot(self.kp_list[which_layer],tmp2)
+            fey = - fexy[:self.nG]
+            fex = fexy[self.nG:]
+        
+            #hz in Fourier space
+            fhz = (self.kx*fey - self.ky*fex)/self.omega
 
-        Nxy = self.GridLayer_Nxy_list[self.id_list[which_layer][3]]
+            #ez in Fourier space
+            fez = (self.ky*fhx - self.kx*fhy)/self.omega
+            if self.id_list[which_layer][0] == 0:
+                fez = fez / self.Uniform_ep_list[self.id_list[which_layer][2]]
+            else:
+                fez = bd.dot(self.Patterned_epinv_list[self.id_list[which_layer][2]],fez)
+            eh.append([[fex,fey,fez],[fhx,fhy,fhz]])
+        return eh
+
+    def Solve_FieldOnGrid(self,which_layer,z_offset,Nxy=None):
+        # Nxy = [Nx,Ny], if not supplied, will use the number in patterned layer
+        # if single z_offset:  output [[ex,ey,ez],[hx,hy,hz]]
+        # if z_offset is list: output [[[ex1,ey1,ez1],[hx1,hy1,hz1]],  [[ex2,ey2,ez2],[hx2,hy2,hz2]] ...]
+
+        if bd.isinstance(Nxy,type(None)):
+            Nxy = self.GridLayer_Nxy_list[self.id_list[which_layer][3]]
         Nx = Nxy[0]
         Ny = Nxy[1]
 
         # e,h in Fourier space
-        fe,fh = self.Solve_FieldFourier(which_layer,z_offset)
+        fehl = self.Solve_FieldFourier(which_layer,z_offset)
 
-        ex = get_ifft(Nx,Ny,fe[0],self.G)
-        ey = get_ifft(Nx,Ny,fe[1],self.G)
-        ez = get_ifft(Nx,Ny,fe[2],self.G)
+        eh = []
+        for feh in fehl:
+            fe = feh[0]
+            fh = feh[1]
+            ex = get_ifft(Nx,Ny,fe[0],self.G)
+            ey = get_ifft(Nx,Ny,fe[1],self.G)
+            ez = get_ifft(Nx,Ny,fe[2],self.G)
 
-        hx = get_ifft(Nx,Ny,fh[0],self.G)
-        hy = get_ifft(Nx,Ny,fh[1],self.G)
-        hz = get_ifft(Nx,Ny,fh[2],self.G)
-
-        return [ex,ey,ez],[hx,hy,hz]
+            hx = get_ifft(Nx,Ny,fh[0],self.G)
+            hy = get_ifft(Nx,Ny,fh[1],self.G)
+            hz = get_ifft(Nx,Ny,fh[2],self.G)
+            eh.append([[ex,ey,ez],[hx,hy,hz]])
+        if bd.isinstance(z_offset,float) or bd.isinstance(z_offset,int):
+            eh = eh[0]
+        return eh
 
     def Volume_integral(self,which_layer,Mx,My,Mz,normalize=0):
         '''Mxyz is convolution matrix.
@@ -363,7 +399,9 @@ class obj:
         returns 2F_x,2F_y,2F_z, integrated over z-plane
         '''
         z_offset = 0.
-        e,h = self.Solve_FieldFourier(which_layer,z_offset)
+        eh = self.Solve_FieldFourier(which_layer,z_offset)
+        e = eh[0][0]
+        h = eh[0][1]
         ex = e[0]
         ey = e[1]
         ez = e[2]
@@ -532,9 +570,9 @@ def SolveInterior(which_layer,a0,bN,q_list,phi_list,kp_list,thickness_list):
     return ai,bi
 
 def TranslateAmplitudes(q,thickness,dz,ai,bi):
-    ai = ai*bd.exp(1j*q*dz)
-    bi = bi*bd.exp(1j*q*(thickness-dz))
-    return ai,bi
+    aim = ai*bd.exp(1j*q*dz)
+    bim = bi*bd.exp(1j*q*(thickness-dz))
+    return aim,bim
         
 
 def GetZPoyntingFlux(ai,bi,omega,kp,phi,q,byorder=0):
