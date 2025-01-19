@@ -2,8 +2,8 @@ import numpy as np
 
 # Import autograd if available
 try:
-    import autograd_edited.numpy as npa
-    from autograd_edited.builtins import isinstance as aisinstance
+    import autograd.numpy as npa
+    from autograd.builtins import isinstance as aisinstance
     AG_AVAILABLE = True
 except ImportError:
     AG_AVAILABLE = False
@@ -100,14 +100,14 @@ def set_backend(name):
         Name of the backend. HIPS/autograd must be installed to use 'autograd'.
     """
     # perform checks
-    if name == 'autograd_edited' and not AG_AVAILABLE:
+    if name == 'autograd' and not AG_AVAILABLE:
         raise ValueError("Autograd backend is not available, autograd must \
             be installed.")
 
     # change backend by monkeypatching
     if name == 'numpy':
         backend.__class__ = NumpyBackend
-    elif name == 'autograd_edited':
+    elif name == 'autograd':
         backend.__class__ = AutogradBackend
     else:
         raise ValueError("unknown backend")
